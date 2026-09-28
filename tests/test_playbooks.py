@@ -18,10 +18,23 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 NODES = ["dc-01", "dc-02", "dc-03"]
 
-# Ansible lives in the project venv. Resolve it by absolute path so the suite
-# behaves the same whether it is run from make, from a hook, or by hand.
-VENV_BIN = Path("/opt/venv/bin")
-if (VENV_BIN / "ansible-playbook").exists():
+# Ansible may live in a project venv (a self-hosted box) or on the system PATH
+# (a CI runner). Resolve it either way rather than hardcoding one machine's
+# layout -- this suite has to behave the same in both places.
+def _ansible_bin() -> Path | None:
+    import shutil
+
+    found = shutil.which("ansible-playbook")
+    if found:
+        return Path(found).parent
+    for cand in (Path("/opt/venv/bin"), Path(sys.prefix) / "bin"):
+        if (cand / "ansible-playbook").exists():
+            return cand
+    return None
+
+
+VENV_BIN = _ansible_bin()
+if VENV_BIN:
     os.environ["PATH"] = f"{VENV_BIN}:{os.environ.get('PATH', '')}"
 
 green, red, yellow, reset = "\033[32m", "\033[31m", "\033[33m", "\033[0m"

@@ -1,9 +1,20 @@
 # dc-platform - a three-node virtualisation cluster as code
 
 SHELL := /bin/bash
+PYTHON ?= python3
 COMPOSE := docker compose -f sim/docker-compose.yml
-ANSIBLE := ansible-playbook -i ansible/inventory/hosts.ini
-
+# Ansible may sit in a project venv (a self-hosted box) or on the system PATH
+# (a CI runner). Resolve it rather than assuming one machine's layout.
+ifeq ($(shell command -v ansible-playbook 2>/dev/null),)
+  ifneq ($(wildcard /opt/venv/bin/ansible-playbook),)
+    ANSIBLE_BIN := /opt/venv/bin/ansible-playbook
+  else
+    ANSIBLE_BIN := ansible-playbook
+  endif
+else
+  ANSIBLE_BIN := $(shell command -v ansible-playbook)
+endif
+ANSIBLE := $(ANSIBLE_BIN) -i ansible/inventory/hosts.ini
 .PHONY: help sim-up sim-down sim-reset ssh-config syntax check test converge clean lint
 
 help:  ## show this help
@@ -59,7 +70,7 @@ converge: ssh-config  ## apply the full platform configuration
 	ANSIBLE_SSH_ARGS="-F sim/ssh_config" DC_SIMULATE=1 $(ANSIBLE) ansible/site.yml
 
 test:  ## run the full test suite against the simulation
-	/opt/venv/bin/python tests/test_playbooks.py
+	$(PYTHON) tests/test_playbooks.py
 
 lint:  ## static checks on the ansible content
 	ansible-lint ansible/ || true

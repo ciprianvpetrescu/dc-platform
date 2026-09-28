@@ -24,31 +24,37 @@ jobs:
           pip install ansible-core pyyaml
           ansible-galaxy collection install community.general ansible.posix
 
-      - name: Validate terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_wrapper: false
-        continue-on-error: true
-
-      - name: Terraform validate
-        run: |
-          terraform fmt -check -recursive
-          terraform -chdir=terraform init -backend=false
-          terraform -chdir=terraform validate
-        continue-on-error: true
-
       - name: Start the simulation
         run: make sim-up
 
       - name: Write the ssh config
-        run: make ssh-config || sed -i 's#/opt/venv/bin#$(python -c "import sys;print(sys.prefix)")/bin#' Makefile
+        run: make ssh-config
 
       - name: Converge the platform
         run: make converge
 
       - name: Run the test suite
-        run: python tests/test_playbooks.py
+        run: make test
 
       - name: Tear down
         if: always()
         run: make sim-down
+
+  terraform:
+    name: terraform validate
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Format check
+        run: terraform fmt -check -recursive terraform/
+
+      - name: Init and validate
+        run: |
+          terraform -chdir=terraform init -backend=false
+          terraform -chdir=terraform validate

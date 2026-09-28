@@ -61,6 +61,17 @@
     system: true
     state: present
 
+# The package creates the user too. The simulation installs no Grafana, so
+# every file task that names grafana as its owner would fail without this.
+- name: Ensure the grafana user exists
+  ansible.builtin.user:
+    name: grafana
+    group: grafana
+    system: true
+    create_home: false
+    shell: /usr/sbin/nologin
+    state: present
+
 - name: Provision the Prometheus datasource
   ansible.builtin.copy:
     dest: /etc/grafana/provisioning/datasources/prometheus.yml
