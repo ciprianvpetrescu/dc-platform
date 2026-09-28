@@ -24,26 +24,35 @@ jobs:
           pip install ansible-core pyyaml
           ansible-galaxy collection install community.general ansible.posix
 
+      # Two failure modes are invisible on a warm machine at a fixed path
+      # and only appear on a fresh runner: a handler restarting a service
+      # the simulation never installed, and any path that assumes where the
+      # checkout lives. So the whole run happens from a copy at a
+      # different path, converging cold.
+      - name: Relocate the checkout
+        run: |
+          rm -rf /tmp/relocated
+          cp -r "$GITHUB_WORKSPACE" /tmp/relocated
+
       - name: Start the simulation
-        run: make sim-up
+        working-directory: /tmp/relocated
+        run: make sim-reset
 
-      - name: Write the ssh config
-        run: make ssh-config
-
-      # A warm machine can hide a handler that restarts a service the
-      # simulation never installed. Converging cold is what actually
-      # exercises the playbooks, so make that the CI contract.
       - name: Converge the platform (cold)
-        run: make sim-reset && make converge
+        working-directory: /tmp/relocated
+        run: make converge
 
       - name: Converge again (idempotence)
+        working-directory: /tmp/relocated
         run: make converge
 
       - name: Run the test suite
+        working-directory: /tmp/relocated
         run: make test
 
       - name: Tear down
         if: always()
+        working-directory: /tmp/relocated
         run: make sim-down
 
   terraform:
