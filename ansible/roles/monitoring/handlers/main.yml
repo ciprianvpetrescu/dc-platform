@@ -1,10 +1,29 @@
 ---
+# The simulation deliberately does not install Prometheus, Alertmanager,
+# Grafana or Loki - only the package repositories and configuration files are
+# laid down. A handler that restarts a service which was never installed fails
+# the play, so each one is skipped when simulate is set. On a real host the
+# packages are present and the handlers run normally.
 - name: restart prometheus
   ansible.builtin.systemd:
     name: prometheus
     state: restarted
+  when: not simulate | bool
+
+- name: restart alertmanager
+  ansible.builtin.systemd:
+    name: prometheus-alertmanager
+    state: restarted
+  when: not simulate | bool
 
 - name: restart grafana
   ansible.builtin.systemd:
     name: grafana-server
     state: restarted
+  when: not simulate | bool
+
+- name: restart node exporter
+  ansible.builtin.systemd:
+    name: prometheus-node-exporter
+    state: restarted
+  when: not simulate | bool

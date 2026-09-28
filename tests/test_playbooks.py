@@ -175,6 +175,27 @@ def test_runbooks_have_required_sections() -> None:
         check(f"{rb.name} documents impact, diagnosis and recovery", not missing, ", ".join(missing))
 
 
+# ------------------------------------------------------------------- handlers
+
+def test_handlers_guard_simulation() -> None:
+    """A handler that restarts a service the simulation never installed fails
+    only on a machine that has never had it. This is the class of bug a warm
+    local run hides and a cold CI run exposes, so assert it directly."""
+    section("handler safety")
+    import re
+    from pathlib import Path
+
+    for h in sorted(Path("ansible/roles").glob("*/handlers/*.yml")):
+        body = h.read_text()
+        for block in re.split(chr(10) + "- name:", body)[1:]:
+            if "state: restarted" in block:
+                name = block.strip().splitlines()[0].strip()
+                check(
+                    f"{h.parent.parent.name}: {name} is guarded against the simulation",
+                    "not simulate" in block,
+                )
+
+
 # -------------------------------------------------------------------- compose
 
 def test_compose_valid() -> None:
@@ -193,6 +214,7 @@ def main() -> int:
     test_ansible_connectivity()
     test_converge_common()
     test_idempotence()
+    test_handlers_guard_simulation()
     test_alert_rules_have_runbooks()
     test_runbooks_have_required_sections()
 

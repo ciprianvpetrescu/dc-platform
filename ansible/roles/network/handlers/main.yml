@@ -1,5 +1,8 @@
 ---
+# See the note in common/handlers - the restart is guarded so the play is
+# safe on a node where the service is not present.
 - name: restart networkd
   ansible.builtin.systemd:
     name: systemd-networkd
     state: restarted
+  when: not simulate | bool

@@ -30,7 +30,13 @@ jobs:
       - name: Write the ssh config
         run: make ssh-config
 
-      - name: Converge the platform
+      # A warm machine can hide a handler that restarts a service the
+      # simulation never installed. Converging cold is what actually
+      # exercises the playbooks, so make that the CI contract.
+      - name: Converge the platform (cold)
+        run: make sim-reset && make converge
+
+      - name: Converge again (idempotence)
         run: make converge
 
       - name: Run the test suite

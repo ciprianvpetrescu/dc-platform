@@ -1,10 +1,16 @@
 ---
+# Handlers restart services. This is only safe when the service exists, so
+# each is guarded: the simulation installs a minimal package set, and a
+# restart of something absent would fail the play. On a real host the
+# guard is a no-op and the restart runs as normal.
 - name: restart chrony
   ansible.builtin.systemd:
     name: chrony
     state: restarted
+  when: not simulate | bool
 
 - name: restart sshd
   ansible.builtin.systemd:
     name: ssh
     state: restarted
+  when: not simulate | bool
