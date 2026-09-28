@@ -1,0 +1,9 @@
+---
+# Connectivity smoke test. Run this first - it separates "the node is broken"
+# from "my ssh key is wrong", which saves a lot of time.
+- name: Verify every node is reachable and has a working python
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Ping
+      ansible.builtin.ping:

@@ -1,0 +1,39 @@
+# A stand-in datacenter node.
+#
+# It is not Proxmox and it is not Ceph - it presents the same interface the
+# playbooks touch: systemd-networkd, apt, sshd, a filesystem layout, and a
+# writable /etc. That is enough to prove the configuration management works,
+# which is exactly what is being tested here. The roles that install real
+# Proxmox and Ceph are exercised in check mode.
+FROM debian:bookworm-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      systemd systemd-sysv dbus python3 python3-apt sudo \
+      openssh-server iproute2 iputils-ping net-tools \
+      chrony ca-certificates vim htop curl \
+      unattended-upgrades nvme-cli smartmontools \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Ansible connects as this user.
+RUN useradd -m -s /bin/bash ansible \
+    && mkdir -p /home/ansible/.ssh \
+    && echo 'ansible ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/ansible \
+    && chmod 0440 /etc/sudoers.d/ansible
+
+COPY sim/keys/ansible.pub /home/ansible/.ssh/authorized_keys
+RUN chown -R ansible:ansible /home/ansible/.ssh \
+    && chmod 700 /home/ansible/.ssh \
+    && chmod 600 /home/ansible/.ssh/authorized_keys
+
+# Enable the units the simulation needs. In a container these are not started
+# automatically the way they are on a real host, so enable them explicitly -
+# this is a property of the simulation, not of the production roles.
+RUN systemctl enable ssh chrony systemd-networkd dbus 2>/dev/null || true
+RUN mkdir -p /run/sshd
+
+# systemd is PID 1 here so that the roles' systemd tasks behave as they would
+# on a real host, rather than being silently skipped.
+STOPSIGNAL SIGRTMIN+3
+CMD ["/lib/systemd/systemd"]

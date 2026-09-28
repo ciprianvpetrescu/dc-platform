@@ -1,0 +1,54 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  simulation:
+    name: converge against the simulation
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install ansible
+        run: |
+          python -m pip install --upgrade pip
+          pip install ansible-core pyyaml
+          ansible-galaxy collection install community.general ansible.posix
+
+      - name: Validate terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+        continue-on-error: true
+
+      - name: Terraform validate
+        run: |
+          terraform fmt -check -recursive
+          terraform -chdir=terraform init -backend=false
+          terraform -chdir=terraform validate
+        continue-on-error: true
+
+      - name: Start the simulation
+        run: make sim-up
+
+      - name: Write the ssh config
+        run: make ssh-config || sed -i 's#/opt/venv/bin#$(python -c "import sys;print(sys.prefix)")/bin#' Makefile
+
+      - name: Converge the platform
+        run: make converge
+
+      - name: Run the test suite
+        run: python tests/test_playbooks.py
+
+      - name: Tear down
+        if: always()
+        run: make sim-down

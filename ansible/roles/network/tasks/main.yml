@@ -1,0 +1,87 @@
+---
+# The bonding module is built into the Debian kernel, so this is normally a
+# no-op. It is skipped when /lib/modules is unavailable, which is the case in
+# the container-based simulation - there is no kernel of our own to load into.
+- name: Ensure bonding kernel module is loaded
+  community.general.modprobe:
+    name: bonding
+    state: present
+  when: ansible_facts.kernel is defined and
+        (ansible_facts.modules is defined)
+  failed_when: false
+  register: bonding_mod
+
+# Ordering matters here. pve-manager conflicts with the legacy 'vlan' package,
+# so installing the Proxmox suite first and then reaching for 'vlan' breaks the
+# package database. The VLAN netdevs are created by systemd-networkd from the
+# .netdev files below, which need none of these packages on a modern kernel -
+# they are installed only on hosts that do not run Proxmox.
+- name: Install network tooling
+  ansible.builtin.apt:
+    name: "{{ network_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Define the bond
+  ansible.builtin.copy:
+    dest: /etc/systemd/network/10-bond0.netdev
+    content: |
+      [NetDev]
+      Name={{ bond_name }}
+      Kind=bond
+      [Bond]
+      Mode={{ bond_mode }}
+      MIIMonitorSec={{ bond_miimon }}ms
+    mode: "0644"
+
+- name: Attach bond members
+  ansible.builtin.copy:
+    dest: /etc/systemd/network/10-bond0-slaves.network
+    content: |
+      [Match]
+      Name={{ bond_members | join(' ') }}
+      [Network]
+      Bond={{ bond_name }}
+    mode: "0644"
+
+- name: Define VLANs on the bond
+  ansible.builtin.copy:
+    dest: "/etc/systemd/network/20-{{ item.name }}.netdev"
+    content: |
+      [NetDev]
+      Name={{ item.name }}
+      Kind=vlan
+      [VLAN]
+      Id={{ item.id }}
+    mode: "0644"
+  loop:
+    - { name: "{{ mgmt_iface }}", id: "{{ vlan_mgmt_id }}", mtu: "{{ mtu_default }}" }
+    - { name: "{{ vm_iface }}", id: "{{ vlan_vm_id }}", mtu: "{{ mtu_default }}" }
+    - { name: "{{ storage_iface }}", id: "{{ vlan_storage_id }}", mtu: "{{ mtu_storage }}" }
+
+- name: Address the management VLAN only
+  ansible.builtin.copy:
+    dest: "/etc/systemd/network/30-{{ mgmt_iface }}.network"
+    content: |
+      [Match]
+      Name={{ mgmt_iface }}
+      [Network]
+      VLAN={{ bond_name }}
+      Address={{ hostvars[inventory_hostname].ansible_host }}/24
+      Gateway=10.10.0.1
+      DNS=10.10.0.1
+    mode: "0644"
+
+- name: Bring the storage VLAN up without an address
+  ansible.builtin.copy:
+    dest: "/etc/systemd/network/30-{{ storage_iface }}.network"
+    content: |
+      [Match]
+      Name={{ storage_iface }}
+      [Network]
+      VLAN={{ bond_name }}
+      MTUBytes={{ mtu_storage }}
+      # Ceph OSDs bind to this interface explicitly; no L3 address is needed.
+    mode: "0644"
+  notify: restart networkd

@@ -1,0 +1,120 @@
+---
+- name: Create the monitoring group
+  ansible.builtin.group:
+    name: monitoring
+    state: present
+
+- name: Create the monitoring user
+  ansible.builtin.user:
+    name: monitoring
+    group: monitoring
+    shell: /usr/sbin/nologin
+    system: true
+
+- name: Create directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: monitoring
+    group: monitoring
+    mode: "0755"
+  loop:
+    - /etc/prometheus
+    - /var/lib/prometheus
+    - /etc/grafana/provisioning/datasources
+    - /etc/grafana/provisioning/dashboards
+    - /var/lib/grafana/dashboards
+
+# Prometheus and Alertmanager come from Debian; Grafana, Loki and Promtail do
+# not, and are pulled from their own repositories in the tasks below.
+- name: Install the monitoring stack
+  ansible.builtin.apt:
+    name: [prometheus, prometheus-alertmanager]
+    state: present
+    update_cache: true
+  when: not simulate | bool
+
+- name: Configure Prometheus
+  ansible.builtin.template:
+    src: prometheus.yml.j2
+    dest: /etc/prometheus/prometheus.yml
+    owner: monitoring
+    group: monitoring
+    mode: "0644"
+  notify: restart prometheus
+
+- name: Install alert rules
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../prometheus/alerts.yml"
+    dest: /etc/prometheus/alerts.yml
+    owner: monitoring
+    group: monitoring
+    mode: "0644"
+  notify: restart prometheus
+
+# Grafana's package creates this group; the container simulation does not
+# install Grafana, so create it if missing rather than letting the file tasks
+# fail on an unknown group. Harmless on a real host - the task reports ok.
+- name: Ensure the grafana group exists
+  ansible.builtin.group:
+    name: grafana
+    system: true
+    state: present
+
+- name: Provision the Prometheus datasource
+  ansible.builtin.copy:
+    dest: /etc/grafana/provisioning/datasources/prometheus.yml
+    content: |
+      apiVersion: 1
+      datasources:
+        - name: Prometheus
+          type: prometheus
+          access: proxy
+          url: http://localhost:{{ prometheus_port }}
+          isDefault: true
+          editable: false
+    mode: "0640"
+    owner: root
+    group: grafana
+  notify: restart grafana
+
+- name: Provision the dashboards
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../dashboards/"
+    dest: /var/lib/grafana/dashboards/
+    mode: "0644"
+    owner: grafana
+    group: grafana
+  notify: restart grafana
+
+- name: Point Grafana at the provisioned dashboards
+  ansible.builtin.copy:
+    dest: /etc/grafana/provisioning/dashboards/default.yml
+    content: |
+      apiVersion: 1
+      providers:
+        - name: platform
+          folder: Platform
+          type: file
+          options:
+            path: /var/lib/grafana/dashboards
+    mode: "0640"
+    owner: root
+    group: grafana
+  notify: restart grafana
+
+# grafana-cli only exists once Grafana is installed. Skipped in the simulation.
+- name: Set the Grafana admin password
+  ansible.builtin.command: >-
+    grafana-cli admin reset-admin-password {{ grafana_admin_password }}
+  changed_when: true
+  no_log: true
+  when: not simulate | bool
+
+- name: Enable services
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+  loop: [prometheus, prometheus-alertmanager, grafana-server, loki]
+  failed_when: false

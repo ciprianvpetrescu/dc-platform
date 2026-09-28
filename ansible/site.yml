@@ -1,0 +1,32 @@
+---
+# Full platform build. Idempotent: running it twice changes nothing the second time.
+- name: Base configuration on all hypervisors
+  hosts: hypervisors
+  become: true
+  roles:
+    - common
+
+- name: Network configuration
+  hosts: hypervisors
+  become: true
+  serial: 1          # never renumber the network on two nodes at once
+  roles:
+    - network
+
+- name: Proxmox VE
+  hosts: hypervisors
+  become: true
+  roles:
+    - proxmox
+
+- name: Ceph storage
+  hosts: hypervisors
+  become: true
+  roles:
+    - ceph
+
+- name: Monitoring stack
+  hosts: monitoring
+  become: true
+  roles:
+    - monitoring

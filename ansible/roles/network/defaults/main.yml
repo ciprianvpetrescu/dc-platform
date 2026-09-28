@@ -1,0 +1,23 @@
+---
+# Bond members. Two physical NICs per node, active-backup - simple and it works
+# with any switch, which matters more in a small cluster than raw throughput.
+bond_members:
+  - eno1
+  - eno2
+bond_name: bond0
+bond_mode: active-backup
+bond_miimon: 100
+
+vlan_mgmt_id: 10
+vlan_vm_id: 20
+vlan_storage_id: 30
+
+mtu_default: 1500
+mtu_storage: 9000   # jumbo frames - Ceph replication throughput
+
+# Only needed on non-Proxmox hosts. On a PVE node the package is either
+# unavailable or conflicts outright with pve-manager.
+network_packages:
+  - bridge-utils
+# - ifenslave
+# - vlan

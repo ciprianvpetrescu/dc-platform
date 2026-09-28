@@ -1,0 +1,109 @@
+# Every alert here has a matching runbook in runbooks/.
+# Rule: if you cannot write the runbook, you cannot ship the alert.
+groups:
+  - name: node
+    rules:
+      - alert: NodeDown
+        expr: up{job="node"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          runbook: runbooks/node-down.md
+        annotations:
+          summary: "{{ $labels.instance_name }} is not reporting"
+          description: >-
+            Node exporter has been unreachable for 2 minutes. VMs on this node
+            will have restarted elsewhere if HA is enabled. Check power, then
+            management network, then the node itself.
+
+      - alert: HighCPU
+        expr: 100 - (avg by(instance)(rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+        for: 15m
+        labels:
+          severity: warning
+          runbook: runbooks/high-cpu.md
+        annotations:
+          summary: "CPU above 85 percent on {{ $labels.instance_name }}"
+
+      - alert: HighMemory
+        expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100 > 90
+        for: 10m
+        labels:
+          severity: warning
+          runbook: runbooks/high-memory.md
+        annotations:
+          summary: "Memory above 90 percent on {{ $labels.instance_name }}"
+
+      - alert: DiskFillingUp
+        expr: (1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"}) * 100 > 85
+        for: 30m
+        labels:
+          severity: warning
+          runbook: runbooks/disk-space.md
+        annotations:
+          summary: "Filesystem {{ $labels.mountpoint }} on {{ $labels.instance_name }} is above 85 percent"
+
+  - name: ceph
+    rules:
+      - alert: CephHealthWarn
+        expr: ceph_health_status > 1
+        for: 5m
+        labels:
+          severity: warning
+          runbook: runbooks/ceph-degraded.md
+        annotations:
+          summary: "Ceph health is {{ $labels.health_status }}"
+          description: "Degraded but serving. There is time to diagnose properly."
+
+      - alert: CephHealthCritical
+        expr: ceph_health_status == 1
+        for: 1m
+        labels:
+          severity: critical
+          runbook: runbooks/ceph-degraded.md
+        annotations:
+          summary: "Ceph reports ERR - data access is at risk"
+
+      - alert: CephMonQuorumLost
+        expr: ceph_mon_quorum_status == 0
+        for: 1m
+        labels:
+          severity: critical
+          runbook: runbooks/quorum-lost.md
+        annotations:
+          summary: "Ceph monitor quorum lost"
+          description: "Writes have stopped cluster-wide. Reads may continue."
+
+      - alert: CephOSDNearFull
+        expr: (ceph_osd_metadata_avail_bytes / ceph_osd_metadata_size_bytes) * 100 < 15
+        for: 10m
+        labels:
+          severity: warning
+          runbook: runbooks/osd-near-full.md
+
+      - alert: CephOSDsDown
+        expr: count(ceph_osd_up == 0) > 0
+        for: 5m
+        labels:
+          severity: critical
+          runbook: runbooks/osd-down.md
+
+      - alert: CephRebalanceRunning
+        expr: ceph_osd_recovery_bytes > 0
+        for: 20m
+        labels:
+          severity: info
+          runbook: runbooks/rebalance.md
+        annotations:
+          summary: "Recovery still running after 20 minutes"
+
+  - name: backup
+    rules:
+      - alert: BackupFailed
+        expr: time() - backup_last_success_timestamp_seconds > 93600
+        for: 10m
+        labels:
+          severity: critical
+          runbook: runbooks/backup-failed.md
+        annotations:
+          summary: "No successful backup in 26 hours"

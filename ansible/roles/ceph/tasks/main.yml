@@ -1,0 +1,98 @@
+---
+# The Debian-packaged Ceph (Pacific, 16.x) is what a Proxmox host uses before
+# switching to the Proxmox Ceph repository. The simulation installs only
+# ceph-common, because the server packages pull a large dependency tree that
+# needs a kernel we do not have in a container. See docs/SIMULATION.md.
+- name: Install Ceph packages
+  ansible.builtin.apt:
+    name: "{{ ceph_common_only if simulate | bool else ceph_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+# mkfs'ing a monitor needs a real host filesystem layout and a stable fsid.
+# Skipped in the simulation; see docs/SIMULATION.md.
+- name: Bootstrap the monitor on the first node
+  ansible.builtin.command: >-
+    ceph-mon --mkfs -i {{ inventory_hostname }}
+    --monmap /tmp/monmap
+  args:
+    creates: /var/lib/ceph/mon/ceph-{{ inventory_hostname }}/store.db
+  when:
+    - inventory_hostname == groups['ceph_mon'][0]
+    - not simulate | bool
+
+- name: Read the cluster filesystem id
+  ansible.builtin.command: ceph fsid
+  register: ceph_fsid_out
+  changed_when: false
+  when:
+    - inventory_hostname == groups['ceph_mon'][0]
+    - not simulate | bool
+
+- name: Deploy the monitor keyring and config to every monitor
+  ansible.builtin.copy:
+    src: "/var/lib/ceph/mon/ceph-{{ groups['ceph_mon'][0] }}/keyring"
+    dest: "/var/lib/ceph/mon/ceph-{{ inventory_hostname }}/keyring"
+    remote_src: true
+    mode: "0600"
+  when:
+    - inventory_hostname != groups['ceph_mon'][0]
+    - not simulate | bool
+
+- name: Enable the monitor service
+  ansible.builtin.systemd:
+    name: "ceph-mon@{{ inventory_hostname }}"
+    enabled: true
+    state: started
+  when: not simulate | bool
+
+- name: Wait for monitor quorum
+  ansible.builtin.command: ceph mon stat
+  register: mon_stat
+  until: "'quorum' in mon_stat.stdout"
+  retries: 30
+  delay: 5
+  changed_when: false
+  run_once: true
+  when: not simulate | bool
+
+- name: Create the OSDs
+  ansible.builtin.command: >-
+    ceph-volume lvm create --data {{ item }}
+  args:
+    creates: "/var/lib/ceph/osd/ceph-*"
+  loop: "{{ ceph_osd_devices }}"
+  when:
+    - not ansible_check_mode
+    - not simulate | bool
+
+- name: Create the VM storage pool
+  ansible.builtin.command: >-
+    ceph osd pool create {{ ceph_pool_name }}
+    {{ ceph_pool_pg_num }} {{ ceph_pool_pgp_num }}
+  args:
+    creates: /var/lib/ceph/.pool-created
+  run_once: true
+  when: not simulate | bool
+
+- name: Set replica count
+  ansible.builtin.command: >-
+    ceph osd pool set {{ ceph_pool_name }} size {{ ceph_replica_size }}
+  changed_when: true
+  run_once: true
+  when: not simulate | bool
+
+- name: Set minimum replica count
+  ansible.builtin.command: >-
+    ceph osd pool set {{ ceph_pool_name }} min_size {{ ceph_replica_min_size }}
+  changed_when: true
+  run_once: true
+  when: not simulate | bool
+
+- name: Enable the pool for RBD use
+  ansible.builtin.command: >-
+    ceph osd pool application enable {{ ceph_pool_name }} rbd
+  changed_when: true
+  run_once: true
+  when: not simulate | bool

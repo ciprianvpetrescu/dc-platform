@@ -1,0 +1,11 @@
+---
+pve_release: bookworm
+pve_enterprise_repo: false   # use the no-subscription repo
+pve_ceph_repo: true
+cluster_name: dc-cluster
+
+# The container simulation cannot install Proxmox: its post-install script
+# writes to /boot and expects a real kernel. Rather than paper over that, the
+# role is told whether it is running against simulated nodes and skips the
+# package installation there, while still exercising every other task.
+simulate: "{{ lookup('env', 'DC_SIMULATE') | default('0', true) | bool }}"

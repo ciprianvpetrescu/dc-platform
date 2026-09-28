@@ -1,0 +1,62 @@
+# Three simulated nodes on a management network, mirroring the real VLAN 10 plan.
+#
+# dc-01 gets a pinned address because it is the first node - it creates the
+# cluster and its address is referenced by the join order.
+services:
+  dc-01:
+    build:
+      context: ..
+      dockerfile: sim/Dockerfile.node
+    container_name: dc-01
+    hostname: dc-01
+    privileged: true
+    cgroup: host
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    tmpfs:
+      - /run
+      - /tmp
+    networks:
+      dcnet:
+        ipv4_address: 10.10.0.11
+
+  dc-02:
+    build:
+      context: ..
+      dockerfile: sim/Dockerfile.node
+    container_name: dc-02
+    hostname: dc-02
+    privileged: true
+    cgroup: host
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    tmpfs:
+      - /run
+      - /tmp
+    networks:
+      dcnet:
+        ipv4_address: 10.10.0.12
+
+  dc-03:
+    build:
+      context: ..
+      dockerfile: sim/Dockerfile.node
+    container_name: dc-03
+    hostname: dc-03
+    privileged: true
+    cgroup: host
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    tmpfs:
+      - /run
+      - /tmp
+    networks:
+      dcnet:
+        ipv4_address: 10.10.0.13
+
+networks:
+  dcnet:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.10.0.0/24

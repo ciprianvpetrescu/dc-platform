@@ -1,0 +1,9 @@
+---
+grafana_port: 3000
+prometheus_port: 9090
+loki_port: 3100
+grafana_admin_user: admin
+# Password is never stored here - it comes from the vault.
+grafana_admin_password: "{{ vault_grafana_password }}"
+
+simulate: "{{ lookup('env', 'DC_SIMULATE') | default('0', true) | bool }}"
